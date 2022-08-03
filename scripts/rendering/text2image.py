@@ -50,6 +50,8 @@ class Text2Image:
             dtype=jnp.float16,
             _do_init=False,
         )
+        self.generator_processor = DalleBartProcessor.from_pretrained(
+            generator_version, revision=generator_commit_id)
         self.decoder_model, self.decoder_params = VQModel.from_pretrained(
             decoder_version, revision=decoder_commit_id, _do_init=False)
 
@@ -76,7 +78,7 @@ class Text2Image:
                          self.decoder_params)
 
     def __call__(self, prompts):
-        tokenized_prompts = self.processor(prompts)
+        tokenized_prompts = self.generator_processor(prompts)
         #tokenized_prompt = replicate(tokenized_promts)
         images = []
         for i in trange(max(self.n_predictions // jax.device_count(), 1)):
