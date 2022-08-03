@@ -1,0 +1,11 @@
+{
+    "generator_version": "DALLE_MODEL",
+    "generator_commit_id": "DALLE_COMMIT_ID",
+    "decoder_version": "VQGAN_REPO",
+    "decoder_commit_id": "VQGAN_COMMIT_ID",
+    "n_predictions": 1,
+    "gen_top_k": null,
+    "gen_top_p": null,
+    "temperature": null,
+    "cond_scale": 10.0
+}

@@ -17,6 +17,7 @@ from functools import partial
 from PIL import Image
 from tqdm import trange
 from tqdm.notebook import trange
+from typing import Dict, Any
 
 from dalle_mini import DalleBart, DalleBartProcessor
 from vqgan_jax.modeling_flax_vqgan import VQModel
@@ -37,6 +38,10 @@ class Text2ImageConfig:
     gen_top_p: int = None
     temperature: int = None
     cond_scale: int = 10.0
+
+    @classmethod
+    def from_dict(cls, text2image_dict: Dict[str, Any]) -> Text2ImageConfig:
+        return cls(**text2image_dict)
 
 
 class Text2Image:
@@ -83,10 +88,10 @@ class Text2Image:
         images = []
         for i in trange(max(self.n_predictions // jax.device_count(), 1)):
             #self.key, subkey = jax.random.split(self.key)
-            encoded_images = self.p_generate(tokenized_prompts)  #,
-            #shard_prng_key(subkey))
+            encoded_images = self.prompt_generate(
+                tokenized_prompts)  #,shard_prng_key(subkey))
             encoded_images = encoded_images.sequences[..., 1:]
-            decoded_images = self.p_decode(encoded_images)
+            decoded_images = self.prompt_decode(encoded_images)
             decoded_images = decoded_images.clip(0.0, 1.0).reshape(
                 (-1, 256, 256, 3))
             for decoded_img in decoded_images:
