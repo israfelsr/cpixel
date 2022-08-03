@@ -58,7 +58,7 @@ class Text2Image:
 
     def __call__(self, prompts: str):
         LOG.info(f"Generating images for {prompts}")
-        tokenized_prompts = self.text_procesor(prompts)
+        tokenized_prompts = self.processor(prompts)
         tokenized_prompt = replicate(tokenized_prompts)
         key, subkey = jax.random.split(self.key)
         encoded_images = self.p_generate(tokenized_prompt, key)
