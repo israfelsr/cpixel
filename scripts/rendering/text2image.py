@@ -9,6 +9,7 @@ import jax
 import jax.numpy as jnp
 from flax.jax_utils import replicate
 from functools import partial
+from tqdm import trange
 
 from scripts.util.logging import get_logger
 import random
@@ -40,31 +41,38 @@ class Text2Image:
                                                   revision=model_commit_id,
                                                   dtype=jnp.float16,
                                                   _do_init=False)
+
         processor = DalleBartProcessor.from_pretrained(
             model_version, revision=model_commit_id)
         return model, params, processor
 
     @partial(jax.pmap,
              axis_name="batch",
-             static_broadcasted_argnums=(3, 4, 5, 6))
-    def p_generate(self, tokenized_prompt, key):
+             static_broadcasted_argnums=(4, 5, 6, 7))
+    def p_generate(self, tokenized_prompt, key, params, top_k, top_p,
+                   temperature, condition_scale):
         return self.model.generate(**tokenized_prompt,
                                    prng_key=key,
-                                   params=self.params,
-                                   top_k=self.top_k,
-                                   top_p=self.top_p,
-                                   temperature=self.temperature,
-                                   condition_scale=self.condition_scale)
+                                   params=params,
+                                   top_k=top_k,
+                                   top_p=top_p,
+                                   temperature=temperature,
+                                   condition_scale=condition_scale)
 
     def __call__(self, prompts: str):
         LOG.info(f"Generating images for {prompts}")
+        images = []
         tokenized_prompts = self.processor(prompts)
         tokenized_prompt = replicate(tokenized_prompts)
-        key, subkey = jax.random.split(self.key)
-        encoded_images = self.p_generate(tokenized_prompt, key)
-        print(encoded_images)
-        encoded_images = encoded_images.sequences[..., 1:]
-        print(encoded_images)
+        for i in trange(max(self.num_predictions // jax.device_count(), 1)):
+            key, subkey = jax.random.split(self.key)
+            encoded_images = self.p_generate(tokenized_prompt, key,
+                                             self.params, self.gen_top_k,
+                                             self.gen_top_p, self.temperature,
+                                             self.cond_scale)
+            print(encoded_images)
+            encoded_images = encoded_images.sequences[..., 1:]
+            print(encoded_images)
 
 
 if '__main__' == __name__:
