@@ -41,6 +41,8 @@ class Text2ImageConfig:
     decoder_version: str
     decoder_commit_id: str
     n_predictions: int
+    # We can customize generation parameters
+    # (see https://huggingface.co/blog/how-to-generate)
     gen_top_k: int = None
     gen_top_p: int = None
     temperature: int = None
@@ -53,28 +55,20 @@ class Text2ImageConfig:
 
 class Text2Image:
 
-    def __init__(self, model_name: str, model_commit_id: str, key, generator,
-                 params, processor, decoder, decoder_params):
+    def __init__(self, key, generator, params, processor, decoder,
+                 decoder_params, config):
         self.generator = generator
         self.params = params
         self.processor = processor
         self.decoder = decoder
         self.decoder_params = decoder_params
-
-        # number of predictions per prompt
-        self.n_predictions = 1
-
-        # We can customize generation parameters (see https://huggingface.co/blog/how-to-generate)
-        self.gen_top_k = None
-        self.gen_top_p = None
-        self.temperature = None
-        self.cond_scale = 10.0
+        self.config = config
         self.key = key
 
     def p_generate(self, tokenized_prompt):
         return _p_generate(self.generator, tokenized_prompt, self.params,
-                           self.gen_top_k, self.gen_top_p, self.temperature,
-                           self.cond_scale)
+                           self.config.gen_top_k, self.config.gen_top_p,
+                           self.config.temperature, self.config.cond_scale)
 
     def p_decode(self, encoded_images):
         return _p_decode(self.decoder, encoded_images, self.decoder_params)
@@ -83,7 +77,8 @@ class Text2Image:
         tokenized_prompts = self.processor(prompts)
         #tokenized_prompt = replicate(tokenized_promts)
         images = []
-        for i in trange(max(self.n_predictions // jax.device_count(), 1)):
+        for i in trange(max(self.config.n_predictions // jax.device_count(),
+                            1)):
             #self.key, subkey = jax.random.split(self.key)
             encoded_images = self.p_generate(tokenized_prompts)  #,
             #shard_prng_key(subkey))
@@ -143,8 +138,8 @@ if '__main__' == __name__:
         revision=config.decoder_commit_id,
         _do_init=False)
 
-    text_context = Text2Image(DALLE_MODEL, DALLE_COMMIT_ID, key, model, parser,
-                              processor, decoder, decoder_params)
+    text_context = Text2Image(key, model, parser, processor, decoder,
+                              decoder_params, config)
 
     prompts = [
         "sunset over a lake in the mountains",
