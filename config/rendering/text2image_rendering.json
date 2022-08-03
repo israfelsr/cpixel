@@ -1,6 +1,6 @@
 {
     "generator_version": "dalle-mini/dalle-mini/mini-1:v0",
-    "generator_commit_id": "None",
+    "generator_commit_id": null,
     "decoder_version": "dalle-mini/vqgan_imagenet_f16_16384",
     "decoder_commit_id": "e93a26e7707683d349bf5d5c41c5b0ef69b677a9",
     "n_predictions": 1,

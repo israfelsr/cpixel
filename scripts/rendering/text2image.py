@@ -7,6 +7,13 @@ DALLE_COMMIT_ID = None
 VQGAN_REPO = "dalle-mini/vqgan_imagenet_f16_16384"
 VQGAN_COMMIT_ID = "e93a26e7707683d349bf5d5c41c5b0ef69b677a9"
 
+import json
+from dataclasses import dataclass
+import numpy as np
+from PIL import Image
+from tqdm import trange
+from typing import Dict, Any
+import random
 import jax
 import jax.numpy as jnp
 from dalle_mini import DalleBart, DalleBartProcessor
@@ -14,23 +21,27 @@ from vqgan_jax.modeling_flax_vqgan import VQModel
 from flax.jax_utils import replicate
 from functools import partial
 from flax.training.common_utils import shard_prng_key
-import numpy as np
-from PIL import Image
-from tqdm.notebook import trange
-import random
 
 from scripts.util.logging import get_logger
 
 LOG = get_logger(__name__)
 
-from dalle_mini import DalleBart, DalleBartProcessor
-from flax.jax_utils import replicate
-from functools import partial
-from flax.training.common_utils import shard_prng_key
-import numpy as np
-from PIL import Image
-from tqdm.notebook import trange
-import random
+
+@dataclass
+class Text2ImageConfig:
+    generator_version: str
+    generator_commit_id: str
+    decoder_version: str
+    decoder_commit_id: str
+    n_predictions: int
+    gen_top_k: int = None
+    gen_top_p: int = None
+    temperature: int = None
+    cond_scale: int = 10.0
+
+    @classmethod
+    def from_dict(cls, text2image_dict: Dict[str, Any]):
+        return cls(**text2image_dict)
 
 
 class Text2Image:
@@ -42,7 +53,7 @@ class Text2Image:
         self.processor = processor
 
         # number of predictions per prompt
-        self.n_predictions = 8
+        self.n_predictions = 1
 
         # We can customize generation parameters (see https://huggingface.co/blog/how-to-generate)
         self.gen_top_k = None
@@ -77,7 +88,7 @@ class Text2Image:
                 img = Image.fromarray(
                     np.asarray(decoded_img * 255, dtype=np.uint8))
                 images.append(img)
-                display(img)
+                img.show()
                 print()
 
 
@@ -104,7 +115,10 @@ def _p_decode(vqgan, indices, params):
 
 if '__main__' == __name__:
     # check how many devices are available
-    jax.local_device_count()
+    LOG.info(jax.local_device_count())
+    config_path = "./config/rendering/text2image_rendering.json"
+    config = Text2ImageConfig.from_dict(json.load(open(config_path)))
+    print(config)
     seed = random.randint(0, 2**32 - 1)
     key = jax.random.PRNGKey(seed)
     model, parser = DalleBart.from_pretrained(DALLE_MODEL,
@@ -122,6 +136,7 @@ if '__main__' == __name__:
                               processor, vqgan_params, vqgan)
 
     prompts = [
+        "HuggingFace logo at the beach",
         "sunset over a lake in the mountains",
         "the Eiffel tower landing on the moon",
     ]
