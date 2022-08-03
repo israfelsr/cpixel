@@ -26,6 +26,13 @@ from scripts.util.logging import get_logger
 
 LOG = get_logger(__name__)
 
+# Enabling TPUs in GColab
+try:
+    import jax.tools.colab_tpu
+    jax.tools.colab_tpu.setup_tpu()
+except Exception as e:
+    LOG.info("There is no TPU available")
+
 
 @dataclass
 class Text2ImageConfig:
@@ -46,11 +53,13 @@ class Text2ImageConfig:
 
 class Text2Image:
 
-    def __init__(self, model_name: str, model_commit_id: str, key, model,
-                 params, processor, vqgan_params, vqgan):
-        self.model = model
+    def __init__(self, model_name: str, model_commit_id: str, key, generator,
+                 params, processor, decoder, decoder_params):
+        self.generator = generator
         self.params = params
         self.processor = processor
+        self.decoder = decoder
+        self.decoder_params = decoder_params
 
         # number of predictions per prompt
         self.n_predictions = 1
@@ -61,16 +70,14 @@ class Text2Image:
         self.temperature = None
         self.cond_scale = 10.0
         self.key = key
-        self.vqgan_params = vqgan_params
-        self.vqgan = vqgan
 
     def p_generate(self, tokenized_prompt):
-        return _p_generate(self.model, tokenized_prompt, self.params,
+        return _p_generate(self.generator, tokenized_prompt, self.params,
                            self.gen_top_k, self.gen_top_p, self.temperature,
                            self.cond_scale)
 
     def p_decode(self, encoded_images):
-        return _p_decode(self.vqgan, encoded_images, self.vqgan_params)
+        return _p_decode(self.decoder, encoded_images, self.decoder_params)
 
     def __call__(self, prompts):
         tokenized_prompts = self.processor(prompts)
@@ -109,34 +116,37 @@ def _p_generate(model, tokenized_prompt, params, top_k, top_p, temperature,
 
 # decode image
 #@partial(jax.pmap, axis_name="batch")
-def _p_decode(vqgan, indices, params):
-    return vqgan.decode_code(indices, params=params)
+def _p_decode(model, indices, params):
+    return model.decode_code(indices, params=params)
 
 
 if '__main__' == __name__:
     # check how many devices are available
-    LOG.info(jax.local_device_count())
+    LOG.info(f"N of devices available {jax.local_device_count()}")
     config_path = "./config/rendering/text2image_rendering.json"
     config = Text2ImageConfig.from_dict(json.load(open(config_path)))
-    print(config)
     seed = random.randint(0, 2**32 - 1)
     key = jax.random.PRNGKey(seed)
-    model, parser = DalleBart.from_pretrained(DALLE_MODEL,
-                                              revision=DALLE_COMMIT_ID,
-                                              dtype=jnp.float16,
-                                              _do_init=False)
-    processor = DalleBartProcessor.from_pretrained(DALLE_MODEL,
-                                                   revision=DALLE_COMMIT_ID)
+    model, parser = DalleBart.from_pretrained(
+        config.generator_version,
+        revision=config.generator_commit_id,
+        dtype=jnp.float16,
+        _do_init=False)
+
+    processor = DalleBartProcessor.from_pretrained(
+        config.generator_version,
+        revision=config.generator_commit_id,
+    )
     # Load VQGAN
-    vqgan, vqgan_params = VQModel.from_pretrained(VQGAN_REPO,
-                                                  revision=VQGAN_COMMIT_ID,
-                                                  _do_init=False)
+    decoder, decoder_params = VQModel.from_pretrained(
+        config.decoder_version,
+        revision=config.decoder_commit_id,
+        _do_init=False)
 
     text_context = Text2Image(DALLE_MODEL, DALLE_COMMIT_ID, key, model, parser,
-                              processor, vqgan_params, vqgan)
+                              processor, decoder, decoder_params)
 
     prompts = [
-        "HuggingFace logo at the beach",
         "sunset over a lake in the mountains",
         "the Eiffel tower landing on the moon",
     ]
