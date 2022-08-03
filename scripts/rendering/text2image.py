@@ -55,15 +55,15 @@ class Text2ImageConfig:
 
 class Text2Image:
 
-    def __init__(self, key, generator, params, processor, decoder,
-                 decoder_params, config):
+    def __init__(self, generator, params, processor, decoder, decoder_params,
+                 config):
         self.generator = generator
         self.params = params
         self.processor = processor
         self.decoder = decoder
         self.decoder_params = decoder_params
         self.config = config
-        self.key = key
+        #self.key = key
 
     def p_generate(self, tokenized_prompt):
         return _p_generate(self.generator, tokenized_prompt, self.params,
@@ -90,8 +90,7 @@ class Text2Image:
                 img = Image.fromarray(
                     np.asarray(decoded_img * 255, dtype=np.uint8))
                 images.append(img)
-                img.show()
-                print()
+        return images
 
 
 # Model Inference
@@ -120,8 +119,8 @@ if '__main__' == __name__:
     LOG.info(f"N of devices available {jax.local_device_count()}")
     config_path = "./config/rendering/text2image_rendering.json"
     config = Text2ImageConfig.from_dict(json.load(open(config_path)))
-    seed = random.randint(0, 2**32 - 1)
-    key = jax.random.PRNGKey(seed)
+    #seed = random.randint(0, 2**32 - 1)
+    #key = jax.random.PRNGKey(seed)
     model, parser = DalleBart.from_pretrained(
         config.generator_version,
         revision=config.generator_commit_id,
@@ -138,7 +137,7 @@ if '__main__' == __name__:
         revision=config.decoder_commit_id,
         _do_init=False)
 
-    text_context = Text2Image(key, model, parser, processor, decoder,
+    text_context = Text2Image(model, parser, processor, decoder,
                               decoder_params, config)
 
     prompts = [
