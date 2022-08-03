@@ -1,0 +1,7 @@
+# Environment
+.DS_store
+cpixel-venv/
+__pycache__/
+
+# Imported libraries
+pixel/
