@@ -1,30 +1,60 @@
+# DALLE MODEL
 #DALLE_MODEL = "dalle-mini/dalle-mini/mega-1-fp16:latest"  # can be wandb artifact or 🤗 Hub or local folder or google bucket
+DALLE_MODEL = "dalle-mini/dalle-mini/mini-1:v0" ""
 DALLE_COMMIT_ID = None
 
-# if the notebook crashes too often you can use dalle-mini instead by uncommenting below line
-DALLE_MODEL = "dalle-mini/dalle-mini/mini-1:v0" ""
+# VQGAN model
+VQGAN_REPO = "dalle-mini/vqgan_imagenet_f16_16384"
+VQGAN_COMMIT_ID = "e93a26e7707683d349bf5d5c41c5b0ef69b677a9"
 
-from dalle_mini import DalleBart, DalleBartProcessor
 import jax
 import jax.numpy as jnp
+import numpy as np
+import random
+from dataclasses import dataclass
 from flax.jax_utils import replicate
 from functools import partial
+from PIL import Image
 from tqdm import trange
+from tqdm.notebook import trange
+
+from dalle_mini import DalleBart, DalleBartProcessor
+from vqgan_jax.modeling_flax_vqgan import VQModel
 
 from scripts.util.logging import get_logger
-import random
 
 LOG = get_logger(__name__)
 
 
+@dataclass
+class Text2ImageConfig:
+    generator_version: str
+    generator_commit_id: str
+    decoder_version: str
+    decoder_commit_id: str
+    n_predictions: int
+    gen_top_k: int = None
+    gen_top_p: int = None
+    temperature: int = None
+    cond_scale: int = 10.0
+
+
 class Text2Image:
 
-    def __init__(self, model_version: str, model_commit_id: str,
-                 num_predictions: int):
-        self.model, params, self.processor = self.load_model(
-            model_version, model_commit_id)
-        self.params = replicate(params)
-        self.num_predictions = num_predictions
+    def __init__(self, generator_version: str, generator_commit_id: str,
+                 decoder_version: str, decoder_commit_id: str,
+                 n_predictions: int):
+        self.generator_model, self.generator_params = DalleBart.from_pretrained(
+            generator_version,
+            revision=generator_commit_id,
+            dtype=jnp.float16,
+            _do_init=False,
+        )
+        self.decoder_model, self.decoder_params = VQModel.from_pretrained(
+            decoder_version, revision=decoder_commit_id, _do_init=False)
+
+        self.n_predictions = n_predictions
+
         LOG.info(
             f"N Devices used for the inference: {jax.local_device_count()}")
 
@@ -33,49 +63,62 @@ class Text2Image:
         self.gen_top_p = None
         self.temperature = None
         self.cond_scale = 10.0
-        seed = random.randint(0, 2**32 - 1)
-        self.key = jax.random.PRNGKey(seed)
+        #seed = random.randint(0, 2**32 - 1)
+        #self.key = jax.random.PRNGKey(seed)
 
-    def load_model(self, model_version, model_commit_id):
-        model, params = DalleBart.from_pretrained(model_version,
-                                                  revision=model_commit_id,
-                                                  dtype=jnp.float16,
-                                                  _do_init=False)
+    def prompt_generate(self, tokenized_prompt):
+        return _p_generate(self.generator_model, tokenized_prompt,
+                           self.generator_params, self.gen_top_k,
+                           self.gen_top_p, self.temperature, self.cond_scale)
 
-        processor = DalleBartProcessor.from_pretrained(
-            model_version, revision=model_commit_id)
-        return model, params, processor
+    def prompt_decode(self, encoded_images):
+        return _p_decode(self.decoder_model, encoded_images,
+                         self.decoder_params)
 
-    @partial(jax.pmap,
-             axis_name="batch",
-             static_broadcasted_argnums=(4, 5, 6, 7))
-    def p_generate(self, tokenized_prompt, key, params, top_k, top_p,
-                   temperature, condition_scale):
-        return self.model.generate(**tokenized_prompt,
-                                   prng_key=key,
-                                   params=params,
-                                   top_k=top_k,
-                                   top_p=top_p,
-                                   temperature=temperature,
-                                   condition_scale=condition_scale)
-
-    def __call__(self, prompts: str):
-        LOG.info(f"Generating images for {prompts}")
-        images = []
+    def __call__(self, prompts):
         tokenized_prompts = self.processor(prompts)
-        tokenized_prompt = replicate(tokenized_prompts)
-        for i in trange(max(self.num_predictions // jax.device_count(), 1)):
-            key, subkey = jax.random.split(self.key)
-            encoded_images = self.p_generate(tokenized_prompt, key,
-                                             self.params, self.gen_top_k,
-                                             self.gen_top_p, self.temperature,
-                                             self.cond_scale)
-            print(encoded_images)
+        #tokenized_prompt = replicate(tokenized_promts)
+        images = []
+        for i in trange(max(self.n_predictions // jax.device_count(), 1)):
+            #self.key, subkey = jax.random.split(self.key)
+            encoded_images = self.p_generate(tokenized_prompts)  #,
+            #shard_prng_key(subkey))
             encoded_images = encoded_images.sequences[..., 1:]
-            print(encoded_images)
+            decoded_images = self.p_decode(encoded_images)
+            decoded_images = decoded_images.clip(0.0, 1.0).reshape(
+                (-1, 256, 256, 3))
+            for decoded_img in decoded_images:
+                img = Image.fromarray(
+                    np.asarray(decoded_img * 255, dtype=np.uint8))
+                images.append(img)
+                display(img)
+                print()
+
+
+# TODO: add JAX support
+# Model Inference
+#@partial(jax.pmap, axis_name="batch")#, static_broadcasted_argnums=(4, 5, 6, 7))
+def _p_generate(model, tokenized_prompt, params, top_k, top_p, temperature,
+                condition_scale):
+    return model.generate(
+        **tokenized_prompt,
+        #prng_key=key,
+        params=params,
+        top_k=top_k,
+        top_p=top_p,
+        temperature=temperature,
+        condition_scale=condition_scale,
+    )
+
+
+# decode image
+#@partial(jax.pmap, axis_name="batch")
+def _p_decode(vqgan, indices, params):
+    return vqgan.decode_code(indices, params=params)
 
 
 if '__main__' == __name__:
-    image_context_generator = Text2Image(DALLE_MODEL, DALLE_COMMIT_ID, 2)
+    image_context_generator = Text2Image(DALLE_MODEL, DALLE_COMMIT_ID,
+                                         VQGAN_REPO, VQGAN_COMMIT_ID, 1)
     prompts = ["sunset over a lake in the mountains"]
     image_context_generator(prompts)
