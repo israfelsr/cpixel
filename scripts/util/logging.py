@@ -1,6 +1,6 @@
 import logging
 
-def get_logger(name, filename=None, level=logging.DEBUG):
+def get_logger(name, filename=None, level=logging.INFO):
     """Returns a logger that logs to stdout and a filename if specified.
     Args:
         name: name of the module
@@ -14,10 +14,10 @@ def get_logger(name, filename=None, level=logging.DEBUG):
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
+    #ch = logging.StreamHandler()
+    #ch.setLevel(level)
+    #ch.setFormatter(formatter)
+    #logger.addHandler(ch)
 
     if filename is not None:
         fh = logging.FileHandler(filename)

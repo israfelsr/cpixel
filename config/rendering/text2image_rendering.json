@@ -7,5 +7,6 @@
     "gen_top_k": null,
     "gen_top_p": null,
     "temperature": null,
-    "cond_scale": 10.0
+    "cond_scale": 10.0,
+    "num_sentences": 2
 }
